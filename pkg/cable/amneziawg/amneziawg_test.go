@@ -105,6 +105,7 @@ func newTestDriver() *testDriver {
 
 	BeforeEach(func() {
 		os.Setenv("CE_IPSEC_PSK", "test-psk-value")
+		os.Unsetenv(cable.CableDriverOptionsEnv)
 
 		t.endpointSpec = submarinerv1.EndpointSpec{
 			ClusterID:  "local",
@@ -177,6 +178,24 @@ func testNewDriver() {
 
 		Expect(t.localEndpoint.Spec().BackendConfig[amneziawg.PublicKey]).To(Equal(device.PublicKey.String()))
 		Expect(t.localEndpoint.Spec().BackendConfig[cable.InterfaceNameConfig]).To(Equal(amneziawg.DefaultDeviceName))
+	})
+
+	When("cable driver options are set", func() {
+		BeforeEach(func() {
+			os.Setenv(cable.CableDriverOptionsEnv, `{"jc":"3","h1":"10-20","i1":"<b 64>"}`)
+		})
+
+		AfterEach(func() {
+			os.Unsetenv(cable.CableDriverOptionsEnv)
+		})
+
+		It("should override the default obfuscation parameters", func() {
+			device := t.client.devices[amneziawg.DefaultDeviceName]
+			Expect(device.Jc).To(Equal(3))
+			Expect(device.H1).To(Equal("10-20"))
+			Expect(device.I1).To(Equal("<b 64>"))
+			Expect(device.S3).To(Equal(35))
+		})
 	})
 }
 

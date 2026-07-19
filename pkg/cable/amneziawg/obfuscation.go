@@ -19,14 +19,15 @@ limitations under the License.
 package amneziawg
 
 import (
+	"strconv"
+
 	"github.com/advanced-wg/awgctrl-go/wgtypes"
+	"github.com/submariner-io/submariner/pkg/cable"
 )
 
-// Hardcoded AmneziaWG v2 obfuscation parameters shared by all gateways in the mesh.
-// H1–H4 and S1–S4 MUST be identical on every peer; Jc/I* may differ but we keep them
-// the same for a symmetric mesh.
-// TODO: make these configurable via join/broker/cluster spec.
-func hardcodedObfuscation() wgtypes.Config {
+// Default AmneziaWG v2 obfuscation parameters used when cable driver options are unset.
+// H1–H4 and S1–S4 MUST be identical on every peer; Jc/I* may differ but defaults stay symmetric.
+func defaultObfuscation() wgtypes.Config {
 	return wgtypes.Config{
 		// Junk packets before each handshake (helps break WG size signatures).
 		Jc:   intPtr(7),
@@ -54,8 +55,8 @@ func hardcodedObfuscation() wgtypes.Config {
 	}
 }
 
-func applyHardcodedObfuscation(cfg *wgtypes.Config) {
-	obf := hardcodedObfuscation()
+func applyObfuscation(cfg *wgtypes.Config, options map[string]string) {
+	obf := obfuscationFromOptions(options)
 
 	cfg.Jc = obf.Jc
 	cfg.Jmin = obf.Jmin
@@ -73,6 +74,61 @@ func applyHardcodedObfuscation(cfg *wgtypes.Config) {
 	cfg.I3 = obf.I3
 	cfg.I4 = obf.I4
 	cfg.I5 = obf.I5
+}
+
+func applyCableDriverObfuscation(cfg *wgtypes.Config) {
+	applyObfuscation(cfg, cable.GetDriverOptions())
+}
+
+func obfuscationFromOptions(options map[string]string) wgtypes.Config {
+	obf := defaultObfuscation()
+	if len(options) == 0 {
+		return obf
+	}
+
+	setIntOption(options, "jc", &obf.Jc)
+	setIntOption(options, "jmin", &obf.Jmin)
+	setIntOption(options, "jmax", &obf.Jmax)
+	setIntOption(options, "s1", &obf.S1)
+	setIntOption(options, "s2", &obf.S2)
+	setIntOption(options, "s3", &obf.S3)
+	setIntOption(options, "s4", &obf.S4)
+
+	setStringOption(options, "h1", &obf.H1)
+	setStringOption(options, "h2", &obf.H2)
+	setStringOption(options, "h3", &obf.H3)
+	setStringOption(options, "h4", &obf.H4)
+	setStringOption(options, "i1", &obf.I1)
+	setStringOption(options, "i2", &obf.I2)
+	setStringOption(options, "i3", &obf.I3)
+	setStringOption(options, "i4", &obf.I4)
+	setStringOption(options, "i5", &obf.I5)
+
+	return obf
+}
+
+func setIntOption(options map[string]string, key string, dest **int) {
+	value, ok := options[key]
+	if !ok || value == "" {
+		return
+	}
+
+	n, err := strconv.Atoi(value)
+	if err != nil {
+		logger.Warningf("Ignoring invalid AmneziaWG option %q=%q: %v", key, value, err)
+		return
+	}
+
+	*dest = intPtr(n)
+}
+
+func setStringOption(options map[string]string, key string, dest **string) {
+	value, ok := options[key]
+	if !ok || value == "" {
+		return
+	}
+
+	*dest = strPtr(value)
 }
 
 func intPtr(i int) *int {

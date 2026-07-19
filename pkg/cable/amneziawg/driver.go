@@ -148,7 +148,7 @@ func NewDriver(localEndpoint *endpoint.Local, _ *types.SubmarinerCluster, _ cert
 		ReplacePeers: true,
 		Peers:        []wgtypes.PeerConfig{},
 	}
-	applyHardcodedObfuscation(&cfg)
+	applyCableDriverObfuscation(&cfg)
 
 	if err = w.client.ConfigureDevice(DefaultDeviceName, cfg); err != nil {
 		return nil, errors.Wrap(err, "failed to configure AmneziaWG device")
