@@ -93,6 +93,31 @@ var _ = Describe("NewInterface", func() {
 				t.assertLink(&newAttrs)
 			})
 		})
+
+		Context("and the HardwareAddr differs", func() {
+			It("should re-create it", func() {
+				newAttrs.HardwareAddr = net.HardwareAddr{0x02, 0x00, 0x01, 0x02, 0x03, 0x04}
+				_ = t.newInterface(&newAttrs)
+				t.assertLink(&newAttrs)
+			})
+		})
+	})
+})
+
+var _ = Describe("HardwareAddrFromIP", func() {
+	It("should derive a locally-administered MAC from an IPv4 address", func() {
+		Expect(vxlan.HardwareAddrFromIP(net.ParseIP("10.210.32.23"))).To(Equal(
+			net.HardwareAddr{0x02, 0x00, 0x0a, 0xd2, 0x20, 0x17}))
+	})
+
+	It("should derive different MACs for different IPs", func() {
+		Expect(vxlan.HardwareAddrFromIP(net.ParseIP("10.210.32.23"))).ToNot(Equal(
+			vxlan.HardwareAddrFromIP(net.ParseIP("10.211.0.16"))))
+	})
+
+	It("should derive a locally-administered MAC from an IPv6 address", func() {
+		Expect(vxlan.HardwareAddrFromIP(net.ParseIP("fd12:3456:789a:1::abcd"))).To(Equal(
+			net.HardwareAddr{0x02, 0x00, 0x00, 0x00, 0xab, 0xcd}))
 	})
 })
 
@@ -236,4 +261,8 @@ func (t *testDriver) assertLink(attrs *vxlan.Attributes) {
 	Expect(link.Group).To(Equal(attrs.Group))
 	Expect(link.Port).To(Equal(attrs.VtepPort))
 	Expect(link.MTU).To(Equal(attrs.Mtu - vxlan.MTUOverhead))
+
+	if len(attrs.HardwareAddr) > 0 {
+		Expect(link.HardwareAddr).To(Equal(attrs.HardwareAddr))
+	}
 }

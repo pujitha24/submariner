@@ -19,6 +19,7 @@ limitations under the License.
 package vxlan
 
 import (
+	"bytes"
 	"io/fs"
 	"net"
 	"syscall"
@@ -33,12 +34,13 @@ import (
 )
 
 type Attributes struct {
-	Name     string
-	VxlanID  int
-	Group    net.IP
-	SrcAddr  net.IP
-	VtepPort int
-	Mtu      int
+	Name         string
+	VxlanID      int
+	Group        net.IP
+	SrcAddr      net.IP
+	VtepPort     int
+	Mtu          int
+	HardwareAddr net.HardwareAddr
 }
 
 type Interface struct {
@@ -62,12 +64,30 @@ func NewInterface(attrs *Attributes, netLink netlinkAPI.Interface) (*Interface, 
 	}, nil
 }
 
+// HardwareAddrFromIP returns a locally-administered unicast MAC derived from the
+// given IP. This avoids Linux VXLAN loopback drops when gateway and worker
+// vx-submariner interfaces would otherwise share the same kernel-assigned MAC
+// (see https://github.com/submariner-io/submariner/issues/4024).
+func HardwareAddrFromIP(ip net.IP) net.HardwareAddr {
+	if ip4 := ip.To4(); ip4 != nil {
+		return net.HardwareAddr{0x02, 0x00, ip4[0], ip4[1], ip4[2], ip4[3]}
+	}
+
+	ip6 := ip.To16()
+	if ip6 == nil {
+		return nil
+	}
+
+	return net.HardwareAddr{0x02, ip6[11], ip6[12], ip6[13], ip6[14], ip6[15]}
+}
+
 func createLinkDevice(attrs *Attributes, netLink netlinkAPI.Interface) (*netlink.Vxlan, error) {
 	link := &netlink.Vxlan{
 		LinkAttrs: netlink.LinkAttrs{
-			Name:  attrs.Name,
-			MTU:   attrs.Mtu - MTUOverhead,
-			Flags: net.FlagUp,
+			Name:         attrs.Name,
+			MTU:          attrs.Mtu - MTUOverhead,
+			Flags:        net.FlagUp,
+			HardwareAddr: attrs.HardwareAddr,
 		},
 		VxlanId: attrs.VxlanID,
 		SrcAddr: attrs.SrcAddr,
@@ -129,6 +149,13 @@ func isVxlanConfigTheSame(newLink, currentLink netlink.Link) bool {
 
 	if required.Port != existing.Port {
 		logger.Warningf("Vxlan Port (%d) of existing interface does not match with required Port (%d)", existing.Port, required.Port)
+		return false
+	}
+
+	if len(required.HardwareAddr) > 0 && !bytes.Equal(required.HardwareAddr, existing.HardwareAddr) {
+		logger.Warningf("Vxlan HardwareAddr (%v) of existing interface does not match with required HardwareAddr (%v)",
+			existing.HardwareAddr, required.HardwareAddr)
+
 		return false
 	}
 
