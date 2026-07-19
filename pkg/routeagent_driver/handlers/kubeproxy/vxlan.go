@@ -76,9 +76,9 @@ func (kp *SyncHandler) createVxLANInterface(ifaceType int, gatewayNodeIP net.IP)
 		}
 
 		for _, fdbAddress := range kp.remoteVTEPs.UnsortedList() {
-			err = kp.vxlanDevice.AddFDB(net.ParseIP(fdbAddress), "00:00:00:00:00:00")
-			if err != nil {
-				return errors.Wrap(err, "failed to add FDB entry on the Gateway Node vxlan iface")
+			podCIDRs := kp.remoteNodePodCIDRs[fdbAddress]
+			if err := kp.programRemoteNodeOnGateway(fdbAddress, podCIDRs, Add); err != nil {
+				return errors.Wrapf(err, "failed to program gateway datapath for node %s", fdbAddress)
 			}
 		}
 
