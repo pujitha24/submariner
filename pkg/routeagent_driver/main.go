@@ -53,6 +53,7 @@ import (
 	"github.com/submariner-io/submariner/pkg/routeagent_driver/cabledriver"
 	"github.com/submariner-io/submariner/pkg/routeagent_driver/chains"
 	"github.com/submariner-io/submariner/pkg/routeagent_driver/environment"
+	"github.com/submariner-io/submariner/pkg/routeagent_driver/handlers/awsvpc"
 	"github.com/submariner-io/submariner/pkg/routeagent_driver/handlers/calico"
 	"github.com/submariner-io/submariner/pkg/routeagent_driver/handlers/healthchecker"
 	"github.com/submariner-io/submariner/pkg/routeagent_driver/handlers/kubeproxy"
@@ -66,6 +67,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/clientcmd"
+	k8snet "k8s.io/utils/net"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager/signals"
 )
@@ -164,6 +166,7 @@ func main() {
 		cabledriver.NewXRFMCleanupHandler(),
 		cabledriver.NewVXLANCleanup(),
 		calico.NewCalicoIPPoolHandler(cfg, env.Namespace, dynamicClientSet),
+		awsvpc.NewHandler(k8sClientSet, k8snet.IPv4),
 		healthchecker.New(&healthchecker.Config{
 			ControllerConfig: pinger.ControllerConfig{
 				SupportedIPFamilies: submSpec.GetIPFamilies(),
