@@ -20,6 +20,7 @@ package vxlan
 
 import (
 	"bytes"
+	"hash/fnv"
 	"io/fs"
 	"net"
 	"syscall"
@@ -74,12 +75,11 @@ func HardwareAddrFromIP(ip net.IP) net.HardwareAddr {
 	}
 
 	if ip6 := ip.To16(); ip6 != nil {
-		var b [5]byte
-		for i, v := range ip6 {
-			b[i%5] ^= v
-		}
+		h := fnv.New64a()
+		_, _ = h.Write(ip6)
+		sum := h.Sum64()
 
-		return net.HardwareAddr{0x02, b[0], b[1], b[2], b[3], b[4]}
+		return net.HardwareAddr{0x02, byte(sum >> 32), byte(sum >> 24), byte(sum >> 16), byte(sum >> 8), byte(sum)}
 	}
 
 	return nil
