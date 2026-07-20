@@ -110,19 +110,25 @@ func NewDriver(localEndpoint *endpoint.Local, _ *types.SubmarinerCluster, _ cert
 		return nil, errors.Wrap(err, "failed to setup AmneziaWG device")
 	}
 
-	if w.client, err = NewClient(); err != nil {
-		return nil, errors.Wrap(err, "failed to open awgctrl client")
-	}
-
 	defer func() {
-		if err != nil {
+		if err == nil {
+			return
+		}
+
+		if w.client != nil {
 			if e := w.client.Close(); e != nil {
 				logger.Errorf(e, "Failed to close client")
 			}
 
 			w.client = nil
 		}
+
+		w.cleanupDevice() //nolint:errcheck // Best-effort cleanup on NewDriver failure
 	}()
+
+	if w.client, err = NewClient(); err != nil {
+		return nil, errors.Wrap(err, "failed to open awgctrl client")
+	}
 
 	var priv, pub, psk wgtypes.Key
 
@@ -440,10 +446,16 @@ func genPsk(psk string) (wgtypes.Key, error) {
 func (w *amneziawgDriver) Cleanup(_ context.Context) error {
 	logger.Info("Uninstalling the amneziawg cable driver")
 
+	return w.cleanupDevice()
+}
+
+func (w *amneziawgDriver) cleanupDevice() error {
 	if w.userspaceDevice != nil {
 		if err := w.userspaceDevice.Close(); err != nil {
 			logger.Warningf("Error closing userspace AmneziaWG device: %v", err)
 		}
+
+		w.userspaceDevice = nil
 	}
 
 	link, err := w.netLink.LinkByName(DefaultDeviceName)

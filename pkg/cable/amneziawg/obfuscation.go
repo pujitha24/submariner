@@ -20,6 +20,7 @@ package amneziawg
 
 import (
 	"strconv"
+	"strings"
 
 	"github.com/advanced-wg/awgctrl-go/wgtypes"
 	"github.com/submariner-io/submariner/pkg/cable"
@@ -94,15 +95,15 @@ func obfuscationFromOptions(options map[string]string) wgtypes.Config {
 	setIntOption(options, "s3", &obf.S3)
 	setIntOption(options, "s4", &obf.S4)
 
-	setStringOption(options, "h1", &obf.H1)
-	setStringOption(options, "h2", &obf.H2)
-	setStringOption(options, "h3", &obf.H3)
-	setStringOption(options, "h4", &obf.H4)
-	setStringOption(options, "i1", &obf.I1)
-	setStringOption(options, "i2", &obf.I2)
-	setStringOption(options, "i3", &obf.I3)
-	setStringOption(options, "i4", &obf.I4)
-	setStringOption(options, "i5", &obf.I5)
+	setHeaderOption(options, "h1", &obf.H1)
+	setHeaderOption(options, "h2", &obf.H2)
+	setHeaderOption(options, "h3", &obf.H3)
+	setHeaderOption(options, "h4", &obf.H4)
+	setInitPacketOption(options, "i1", &obf.I1)
+	setInitPacketOption(options, "i2", &obf.I2)
+	setInitPacketOption(options, "i3", &obf.I3)
+	setInitPacketOption(options, "i4", &obf.I4)
+	setInitPacketOption(options, "i5", &obf.I5)
 
 	return obf
 }
@@ -122,13 +123,81 @@ func setIntOption(options map[string]string, key string, dest **int) {
 	*dest = intPtr(n)
 }
 
-func setStringOption(options map[string]string, key string, dest **string) {
+func setHeaderOption(options map[string]string, key string, dest **string) {
 	value, ok := options[key]
 	if !ok || value == "" {
 		return
 	}
 
+	if !isValidHeaderValue(value) {
+		logger.Warningf("Ignoring invalid AmneziaWG option %q=%q: expected uint32 or min-max range", key, value)
+		return
+	}
+
 	*dest = strPtr(value)
+}
+
+func setInitPacketOption(options map[string]string, key string, dest **string) {
+	value, ok := options[key]
+	if !ok || value == "" {
+		return
+	}
+
+	if !isValidInitPacketValue(value) {
+		logger.Warningf("Ignoring invalid AmneziaWG option %q=%q: expected <tag ...> or hex bytes", key, value)
+		return
+	}
+
+	*dest = strPtr(value)
+}
+
+// isValidHeaderValue accepts a single uint32 or a non-inverted "min-max" range.
+func isValidHeaderValue(value string) bool {
+	parts := strings.Split(value, "-")
+	if len(parts) > 2 {
+		return false
+	}
+
+	nums := make([]uint64, 0, len(parts))
+
+	for _, part := range parts {
+		n, err := strconv.ParseUint(part, 10, 32)
+		if err != nil {
+			return false
+		}
+
+		nums = append(nums, n)
+	}
+
+	if len(nums) == 2 && nums[0] > nums[1] {
+		return false
+	}
+
+	return true
+}
+
+// isValidInitPacketValue accepts Amnezia custom-packet tags (<r N>, <b N>, …)
+// or an even-length hex payload.
+func isValidInitPacketValue(value string) bool {
+	if strings.HasPrefix(value, "<") && strings.HasSuffix(value, ">") && len(value) > 2 {
+		return true
+	}
+
+	if len(value) == 0 || len(value)%2 != 0 {
+		return false
+	}
+
+	for _, r := range value {
+		switch {
+		case r >= '0' && r <= '9':
+		case r >= 'a' && r <= 'f':
+		case r >= 'A' && r <= 'F':
+		default:
+			return false
+		}
+	}
+
+	return true
 }
 
 func intPtr(i int) *int {
