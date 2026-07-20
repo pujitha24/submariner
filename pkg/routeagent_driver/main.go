@@ -67,7 +67,6 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/clientcmd"
-	k8snet "k8s.io/utils/net"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager/signals"
 )
@@ -160,13 +159,13 @@ func main() {
 			mtu.NewHandler(family, env.ClusterCidr, len(env.GlobalCidr) != 0, getTCPMssValue(localNode)))
 
 		handlers = append(handlers, ovn.GetHandlers(family, &env, smClientset, k8sClientSet, dynamicClientSet, config)...)
+		handlers = append(handlers, awsvpc.NewHandler(k8sClientSet, family))
 	}
 
 	handlers = append(handlers,
 		cabledriver.NewXRFMCleanupHandler(),
 		cabledriver.NewVXLANCleanup(),
 		calico.NewCalicoIPPoolHandler(cfg, env.Namespace, dynamicClientSet),
-		awsvpc.NewHandler(k8sClientSet, k8snet.IPv4),
 		healthchecker.New(&healthchecker.Config{
 			ControllerConfig: pinger.ControllerConfig{
 				SupportedIPFamilies: submSpec.GetIPFamilies(),

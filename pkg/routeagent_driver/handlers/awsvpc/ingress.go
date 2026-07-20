@@ -45,17 +45,30 @@ func (h *Handler) onPod(pod *corev1.Pod, deleted bool) {
 		return
 	}
 
-	podIP := podIPv4(pod)
-	if podIP == "" {
-		if deleted {
-			h.removeIngressRouteByIP(pod)
+	key := podKey(pod)
+
+	if deleted {
+		ip := h.takeTrackedPodIP(key)
+		if ip == "" {
+			ip = podIPv4(pod)
+		}
+
+		if ip != "" {
+			h.removeIngressRouteByIPString(ip)
 		}
 
 		return
 	}
 
-	if deleted || pod.Status.Phase == corev1.PodSucceeded || pod.Status.Phase == corev1.PodFailed {
+	podIP := podIPv4(pod)
+	if podIP == "" {
+		return
+	}
+
+	if pod.Status.Phase == corev1.PodSucceeded || pod.Status.Phase == corev1.PodFailed {
+		h.clearTrackedPodIP(key)
 		h.removeIngressRouteByIPString(podIP)
+
 		return
 	}
 
@@ -63,7 +76,40 @@ func (h *Handler) onPod(pod *corev1.Pod, deleted bool) {
 		return
 	}
 
+	h.trackPodIP(key, podIP)
 	h.ensurePodIngressRoute(pod.Spec.NodeName, podIP)
+}
+
+func podKey(pod *corev1.Pod) string {
+	return pod.Namespace + "/" + pod.Name
+}
+
+func (h *Handler) trackPodIP(key, ip string) {
+	h.mutex.Lock()
+	defer h.mutex.Unlock()
+
+	if prev, ok := h.podIPs[key]; ok && prev != "" && prev != ip {
+		h.removePodIngressRouteLocked(prev + "/32")
+	}
+
+	h.podIPs[key] = ip
+}
+
+func (h *Handler) takeTrackedPodIP(key string) string {
+	h.mutex.Lock()
+	defer h.mutex.Unlock()
+
+	ip := h.podIPs[key]
+	delete(h.podIPs, key)
+
+	return ip
+}
+
+func (h *Handler) clearTrackedPodIP(key string) {
+	h.mutex.Lock()
+	defer h.mutex.Unlock()
+
+	delete(h.podIPs, key)
 }
 
 func (h *Handler) reconcileIngressRoutes() {
@@ -173,12 +219,6 @@ func (h *Handler) programAllNodeIngressRoutesLocked() {
 	}
 }
 
-func (h *Handler) removeIngressRouteByIP(pod *corev1.Pod) {
-	if ip := podIPv4(pod); ip != "" {
-		h.removeIngressRouteByIPString(ip)
-	}
-}
-
 func (h *Handler) removeIngressRouteByIPString(dstIP string) {
 	h.mutex.Lock()
 	defer h.mutex.Unlock()
@@ -231,6 +271,7 @@ func (h *Handler) clearIngressRoutesLocked() {
 
 	h.ingressRoutes = map[string]string{}
 	h.nodeIngressRoutes = map[string]string{}
+	h.podIPs = map[string]string{}
 	h.clearNodeIngressPolicyLocked()
 }
 

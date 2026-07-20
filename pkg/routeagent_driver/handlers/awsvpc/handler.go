@@ -54,9 +54,11 @@ import (
 	"github.com/submariner-io/submariner/pkg/routeagent_driver/handlers/kubeproxy"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
+	corelisters "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	k8snet "k8s.io/utils/net"
 	"k8s.io/utils/set"
@@ -82,8 +84,9 @@ type Handler struct {
 	event.HandlerBase
 	event.NodeHandlerBase
 
-	clientset kubernetes.Interface
-	netLink   netlinkAPI.Interface
+	clientset  kubernetes.Interface
+	netLink    netlinkAPI.Interface
+	podLister  corelisters.PodLister
 
 	ipFamily k8snet.IPFamily
 	nodeName string
@@ -93,13 +96,17 @@ type Handler struct {
 
 	// nodeName -> IPv4 InternalIP
 	nodeIPs map[string]string
+	// pod namespace/name -> last known IPv4 (survives delete tombstones with empty Status)
+	podIPs map[string]string
 	// pod dstIP/32 -> VTEP (main table; only while on gateway)
 	ingressRoutes map[string]string
 	// node InternalIP/32 -> VTEP (table awsVPCNodeIngressTableID; only while on gateway)
 	nodeIngressRoutes map[string]string
 	// cable device name from local endpoint (e.g. "submariner" for AmneziaWG)
 	cableIfaceName string
-	// remote cluster CIDRs that must appear in CNI PBR tables
+	// per remote endpoint (UID or ns/name) -> IPv4 subnets
+	remoteEndpointCIDRs map[string]set.Set[string]
+	// union of remoteEndpointCIDRs; used for CNI PBR / ingress policy
 	remoteCIDRs set.Set[string]
 }
 
@@ -107,14 +114,16 @@ type Handler struct {
 // future dual-stack; only IPv4 VPC CNI is handled today.
 func NewHandler(clientset kubernetes.Interface, ipFamily k8snet.IPFamily) event.Handler {
 	return &Handler{
-		clientset:         clientset,
-		netLink:           netlinkAPI.New(),
-		ipFamily:          ipFamily,
-		nodeIPs:           map[string]string{},
-		ingressRoutes:     map[string]string{},
-		nodeIngressRoutes: map[string]string{},
-		remoteCIDRs:       set.New[string](),
-		stopCh:            make(chan struct{}),
+		clientset:           clientset,
+		netLink:             netlinkAPI.New(),
+		ipFamily:            ipFamily,
+		nodeIPs:             map[string]string{},
+		podIPs:              map[string]string{},
+		ingressRoutes:       map[string]string{},
+		nodeIngressRoutes:   map[string]string{},
+		remoteEndpointCIDRs: map[string]set.Set[string]{},
+		remoteCIDRs:         set.New[string](),
+		stopCh:              make(chan struct{}),
 	}
 }
 
@@ -146,7 +155,9 @@ func (h *Handler) Init(ctx context.Context) error {
 	logger.Infof("Amazon VPC CNI handler enabled on node %q", h.nodeName)
 
 	factory := informers.NewSharedInformerFactory(h.clientset, 0)
-	podInformer := factory.Core().V1().Pods().Informer()
+	pods := factory.Core().V1().Pods()
+	podInformer := pods.Informer()
+	h.podLister = pods.Lister()
 
 	_, err := podInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj any) {
@@ -269,7 +280,7 @@ func (h *Handler) TransitionToGateway() error {
 	h.syncNodeIngressPolicyLocked()
 	h.mutex.Unlock()
 
-	if err := h.programAllPodIngressRoutes(ctx); err != nil {
+	if err := h.programAllPodIngressRoutes(); err != nil {
 		logger.Errorf(err, "Failed to list pods while becoming gateway")
 	}
 
@@ -363,18 +374,23 @@ func (h *Handler) syncRemoteEndpoint(endpoint *submarinerv1.Endpoint, removed bo
 	h.mutex.Lock()
 	defer h.mutex.Unlock()
 
-	for _, subnet := range endpoint.Spec.Subnets {
-		if k8snet.IPFamilyOfCIDRString(subnet) != k8snet.IPv4 {
-			continue
+	key := remoteEndpointKey(endpoint)
+
+	if removed {
+		delete(h.remoteEndpointCIDRs, key)
+	} else {
+		cidrs := set.New[string]()
+
+		for _, subnet := range endpoint.Spec.Subnets {
+			if k8snet.IPFamilyOfCIDRString(subnet) == k8snet.IPv4 {
+				cidrs.Insert(subnet)
+			}
 		}
 
-		if removed {
-			h.remoteCIDRs.Delete(subnet)
-		} else {
-			h.remoteCIDRs.Insert(subnet)
-		}
+		h.remoteEndpointCIDRs[key] = cidrs
 	}
 
+	h.rebuildRemoteCIDRsLocked()
 	h.syncCNITableRoutesLocked()
 
 	if h.State().IsOnGateway() {
@@ -384,21 +400,35 @@ func (h *Handler) syncRemoteEndpoint(endpoint *submarinerv1.Endpoint, removed bo
 	return nil
 }
 
+func (h *Handler) rebuildRemoteCIDRsLocked() {
+	h.remoteCIDRs = set.New[string]()
+
+	for _, cidrs := range h.remoteEndpointCIDRs {
+		h.remoteCIDRs.Insert(cidrs.UnsortedList()...)
+	}
+}
+
+func remoteEndpointKey(endpoint *submarinerv1.Endpoint) string {
+	if endpoint.UID != "" {
+		return string(endpoint.UID)
+	}
+
+	return endpoint.Namespace + "/" + endpoint.Name
+}
+
 func (h *Handler) reconcile() {
 	if !h.enabled {
 		return
 	}
 
-	// Re-list pods/nodes so routes missed while vx-submariner was not ready
-	// (TransitionToGateway race) are programmed once the link exists.
+	// Re-apply from informer/node cache so routes missed while vx-submariner was
+	// not ready (TransitionToGateway race) are programmed once the link exists.
 	if h.State().IsOnGateway() {
-		ctx := context.Background()
-
 		h.mutex.Lock()
 		h.programAllNodeIngressRoutesLocked()
 		h.mutex.Unlock()
 
-		if err := h.programAllPodIngressRoutes(ctx); err != nil {
+		if err := h.programAllPodIngressRoutes(); err != nil {
 			logger.Errorf(err, "Failed to list pods during reconcile")
 		}
 	}
@@ -433,14 +463,18 @@ func (h *Handler) seedNodeIPs(ctx context.Context) error {
 	return nil
 }
 
-func (h *Handler) programAllPodIngressRoutes(ctx context.Context) error {
-	pods, err := h.clientset.CoreV1().Pods(corev1.NamespaceAll).List(ctx, metav1.ListOptions{})
-	if err != nil {
-		return errors.Wrap(err, "list pods")
+func (h *Handler) programAllPodIngressRoutes() error {
+	if h.podLister == nil {
+		return nil
 	}
 
-	for i := range pods.Items {
-		h.onPod(&pods.Items[i], false)
+	pods, err := h.podLister.List(labels.Everything())
+	if err != nil {
+		return errors.Wrap(err, "list pods from informer cache")
+	}
+
+	for _, pod := range pods {
+		h.onPod(pod, false)
 	}
 
 	return nil
