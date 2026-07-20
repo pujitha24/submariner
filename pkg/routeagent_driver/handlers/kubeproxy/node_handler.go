@@ -20,6 +20,7 @@ package kubeproxy
 
 import (
 	"net"
+	"slices"
 
 	"github.com/pkg/errors"
 	"github.com/submariner-io/admiral/pkg/log"
@@ -93,6 +94,10 @@ func (kp *SyncHandler) nodePodCIDRs(node *k8sV1.Node) []string {
 
 func (kp *SyncHandler) populateRemoteNode(internalIP string, podCIDRs []string, operation Operation) error {
 	if operation == Add {
+		if existing, ok := kp.remoteNodePodCIDRs[internalIP]; ok && slices.Equal(existing, podCIDRs) {
+			return nil
+		}
+
 		kp.remoteVTEPs.Insert(internalIP)
 		kp.remoteNodePodCIDRs[internalIP] = podCIDRs
 	} else if operation == Delete {
