@@ -75,12 +75,8 @@ func (kp *SyncHandler) createVxLANInterface(ifaceType int, gatewayNodeIP net.IP)
 			return errors.Wrap(err, "failed to create vxlan interface on Gateway Node")
 		}
 
-		for _, fdbAddress := range kp.remoteVTEPs.UnsortedList() {
-			podCIDRs := kp.remoteNodePodCIDRs[fdbAddress]
-			if err := kp.programRemoteNodeOnGateway(fdbAddress, podCIDRs, Add); err != nil {
-				return errors.Wrapf(err, "failed to program gateway datapath for node %s", fdbAddress)
-			}
-		}
+		// Remote-node FDB/neigh/routes are programmed by TransitionToGateway via
+		// syncAllRemoteNodesOnGateway after the interface exists.
 
 		err = kp.netLink.EnsureLooseModeIsConfigured(kp.vxlanIface, kp.ipFamily)
 		if err != nil {

@@ -73,14 +73,19 @@ func (kp *SyncHandler) nodeInternalIP(node *k8sV1.Node) string {
 func (kp *SyncHandler) nodePodCIDRs(node *k8sV1.Node) []string {
 	var cidrs []string
 
-	if node.Spec.PodCIDR != "" && k8snet.IPFamilyOfCIDRString(node.Spec.PodCIDR) == kp.ipFamily {
-		cidrs = append(cidrs, node.Spec.PodCIDR)
+	// Prefer PodCIDRs when set — its first entry normally duplicates PodCIDR.
+	if len(node.Spec.PodCIDRs) > 0 {
+		for _, podCIDR := range node.Spec.PodCIDRs {
+			if k8snet.IPFamilyOfCIDRString(podCIDR) == kp.ipFamily {
+				cidrs = append(cidrs, podCIDR)
+			}
+		}
+
+		return cidrs
 	}
 
-	for _, podCIDR := range node.Spec.PodCIDRs {
-		if k8snet.IPFamilyOfCIDRString(podCIDR) == kp.ipFamily {
-			cidrs = append(cidrs, podCIDR)
-		}
+	if node.Spec.PodCIDR != "" && k8snet.IPFamilyOfCIDRString(node.Spec.PodCIDR) == kp.ipFamily {
+		cidrs = append(cidrs, node.Spec.PodCIDR)
 	}
 
 	return cidrs
