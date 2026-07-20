@@ -24,7 +24,7 @@ import (
 )
 
 // CableDriverOptionsEnv is set by the operator from Submariner.spec.cableDriverOptions.
-const CableDriverOptionsEnv = "SUBMARINER_CABLE_DRIVER_OPTIONS"
+const CableDriverOptionsEnv = "SUBMARINER_CABLEDRIVEROPTIONS"
 
 // GetDriverOptions returns driver-specific options from the environment.
 // An empty or invalid value yields an empty map.
