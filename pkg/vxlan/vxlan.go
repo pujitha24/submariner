@@ -74,7 +74,12 @@ func HardwareAddrFromIP(ip net.IP) net.HardwareAddr {
 	}
 
 	if ip6 := ip.To16(); ip6 != nil {
-		return net.HardwareAddr{0x02, ip6[11], ip6[12], ip6[13], ip6[14], ip6[15]}
+		var b [5]byte
+		for i, v := range ip6 {
+			b[i%5] ^= v
+		}
+
+		return net.HardwareAddr{0x02, b[0], b[1], b[2], b[3], b[4]}
 	}
 
 	return nil

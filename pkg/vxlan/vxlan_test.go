@@ -151,6 +151,23 @@ var _ = Describe("HardwareAddrFromIP", func() {
 		Entry("IPv4", randomIPv4),
 		Entry("IPv6", randomIPv6),
 	)
+
+	It("should derive different MACs when IPv6 addresses share a suffix but differ in prefix", func() {
+		suffix := []byte{0x01, 0x02, 0x03, 0x04, 0x05}
+
+		ip1 := make(net.IP, net.IPv6len)
+		ip1[0] = 0x20
+		copy(ip1[11:], suffix)
+
+		ip2 := make(net.IP, net.IPv6len)
+		ip2[0] = 0xfd
+		copy(ip2[11:], suffix)
+
+		mac1 := vxlan.HardwareAddrFromIP(ip1)
+		mac2 := vxlan.HardwareAddrFromIP(ip2)
+
+		Expect(mac1).ToNot(Equal(mac2))
+	})
 })
 
 func randomIPv4() net.IP {
