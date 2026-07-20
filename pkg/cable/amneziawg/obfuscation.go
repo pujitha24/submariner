@@ -105,6 +105,13 @@ func obfuscationFromOptions(options map[string]string) wgtypes.Config {
 	setInitPacketOption(options, "i4", &obf.I4)
 	setInitPacketOption(options, "i5", &obf.I5)
 
+	if obf.Jmin != nil && obf.Jmax != nil && *obf.Jmin > *obf.Jmax {
+		logger.Warningf("Ignoring AmneziaWG jmin/jmax overrides %d/%d: jmin must be <= jmax", *obf.Jmin, *obf.Jmax)
+		defaults := defaultObfuscation()
+		obf.Jmin = defaults.Jmin
+		obf.Jmax = defaults.Jmax
+	}
+
 	return obf
 }
 

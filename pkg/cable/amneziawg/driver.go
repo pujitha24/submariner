@@ -239,7 +239,10 @@ func (w *amneziawgDriver) ConnectToEndpoint(endpointInfo *natdiscovery.NATEndpoi
 				return ip, nil
 			}
 
-			_ = w.removePeer(oldKey)
+			if err := w.removePeer(oldKey); err != nil {
+				logger.Warningf("Failed to remove old peer %q for cluster %q: %v",
+					oldKey, remoteEndpoint.Spec.ClusterID, err)
+			}
 		}
 
 		delete(w.connections, remoteEndpoint.Spec.ClusterID)
@@ -284,7 +287,13 @@ func (w *amneziawgDriver) ConnectToEndpoint(endpointInfo *natdiscovery.NATEndpoi
 
 	err = w.verifyNewPeer(&peerCfg[0])
 	if err != nil {
-		logger.Errorf(err, "Failed to verify peer configuration")
+		if remErr := w.removePeer(remoteKey); remErr != nil {
+			logger.Warningf("Failed to remove unverified peer %q: %v", remoteKey, remErr)
+		}
+
+		delete(w.connections, remoteEndpoint.Spec.ClusterID)
+
+		return "", errors.Wrap(err, "failed to verify peer configuration")
 	}
 
 	logger.V(log.DEBUG).Infof("Successfully connected endpoint peer %q with IP %q", *remoteKey, remoteIP)
@@ -314,7 +323,10 @@ func (w *amneziawgDriver) DisconnectFromEndpoint(remoteEndpoint *types.Submarine
 		return errors.Wrap(err, "failed to parse peer public key")
 	}
 
-	_ = w.removePeer(remoteKey)
+	if err := w.removePeer(remoteKey); err != nil {
+		logger.Warningf("Failed to remove peer %q for cluster %q: %v",
+			remoteKey, remoteEndpoint.Spec.ClusterID, err)
+	}
 
 	if w.keyMismatch(remoteEndpoint.Spec.ClusterID, remoteKey) {
 		logger.Warningf("Key mismatch for peer cluster %s, keeping existing spec", remoteEndpoint.Spec.ClusterID)
@@ -334,14 +346,17 @@ func (w *amneziawgDriver) GetActiveConnections() ([]v1.Connection, error) {
 }
 
 func (w *amneziawgDriver) setupDevice() error {
-	if link, err := w.netLink.LinkByName(DefaultDeviceName); err == nil {
+	link, err := w.netLink.LinkByName(DefaultDeviceName)
+	switch {
+	case err == nil:
 		if err := w.netLink.LinkDel(link); err != nil {
 			return errors.Wrap(err, "failed to delete existing AmneziaWG device")
 		}
+	case !netlinkAPI.IsLinkNotFoundError(err):
+		return errors.Wrapf(err, "error checking for existing AmneziaWG device %q", DefaultDeviceName)
 	}
 
 	var userspaceDev userspaceDevice
-	var err error
 
 	if StartUserspaceDeviceForTest != nil {
 		userspaceDev, err = StartUserspaceDeviceForTest(DefaultDeviceName)
@@ -354,7 +369,7 @@ func (w *amneziawgDriver) setupDevice() error {
 
 	w.userspaceDevice = userspaceDev
 
-	link, err := w.netLink.LinkByName(DefaultDeviceName)
+	link, err = w.netLink.LinkByName(DefaultDeviceName)
 	if err != nil {
 		return errors.Wrapf(err, "failed to find AmneziaWG link %s", DefaultDeviceName)
 	}

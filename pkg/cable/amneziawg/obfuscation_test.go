@@ -118,6 +118,18 @@ func TestObfuscationFromOptions(t *testing.T) {
 		g.Expect(*obf.S3).To(Equal(*defaults.S3))
 	})
 
+	t.Run("ignores inverted jmin/jmax and keeps defaults", func(t *testing.T) {
+		g := NewWithT(t)
+		defaults := defaultObfuscation()
+		obf := obfuscationFromOptions(map[string]string{
+			"jmin": "200",
+			"jmax": "80",
+		})
+
+		g.Expect(*obf.Jmin).To(Equal(*defaults.Jmin))
+		g.Expect(*obf.Jmax).To(Equal(*defaults.Jmax))
+	})
+
 	t.Run("ignores empty option values", func(t *testing.T) {
 		g := NewWithT(t)
 		defaults := defaultObfuscation()

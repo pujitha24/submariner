@@ -83,6 +83,7 @@ var startUserspaceDevice = func(ifaceName string) (userspaceDevice, error) {
 
 	uapi, err := ipc.UAPIListen(ifaceName, fileUAPI)
 	if err != nil {
+		_ = fileUAPI.Close()
 		_ = tdev.Close()
 		dev.Close()
 
