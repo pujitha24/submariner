@@ -175,6 +175,7 @@ func testNewDriver() {
 		Expect(device.H1).To(Equal("200000000-280000000"))
 		Expect(device.S3).To(Equal(35))
 		Expect(device.I1).To(Equal("<r 40>"))
+		Expect(device.Peers).To(BeEmpty(), "ReplacePeers should clear the pre-seeded peer")
 
 		Expect(t.localEndpoint.Spec().BackendConfig[amneziawg.PublicKey]).To(Equal(device.PublicKey.String()))
 		Expect(t.localEndpoint.Spec().BackendConfig[cable.InterfaceNameConfig]).To(Equal(amneziawg.DefaultDeviceName))
