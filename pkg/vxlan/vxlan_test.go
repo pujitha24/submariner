@@ -19,6 +19,7 @@ limitations under the License.
 package vxlan_test
 
 import (
+	"crypto/rand"
 	"net"
 	"testing"
 
@@ -105,21 +106,68 @@ var _ = Describe("NewInterface", func() {
 })
 
 var _ = Describe("HardwareAddrFromIP", func() {
-	It("should derive a locally-administered MAC from an IPv4 address", func() {
-		Expect(vxlan.HardwareAddrFromIP(net.ParseIP("10.210.32.23"))).To(Equal(
-			net.HardwareAddr{0x02, 0x00, 0x0a, 0xd2, 0x20, 0x17}))
+	It("should return nil for an invalid IP", func() {
+		Expect(vxlan.HardwareAddrFromIP(nil)).To(BeNil())
+		Expect(vxlan.HardwareAddrFromIP(net.IP{})).To(BeNil())
 	})
 
-	It("should derive different MACs for different IPs", func() {
-		Expect(vxlan.HardwareAddrFromIP(net.ParseIP("10.210.32.23"))).ToNot(Equal(
-			vxlan.HardwareAddrFromIP(net.ParseIP("10.211.0.16"))))
-	})
+	DescribeTableSubtree("for random addresses",
+		func(randomIP func() net.IP) {
+			It("should be stable, locally-administered, unicast, and unique", func() {
+				const samples = 32
 
-	It("should derive a locally-administered MAC from an IPv6 address", func() {
-		Expect(vxlan.HardwareAddrFromIP(net.ParseIP("fd12:3456:789a:1::abcd"))).To(Equal(
-			net.HardwareAddr{0x02, 0x00, 0x00, 0x00, 0xab, 0xcd}))
-	})
+				ips := make([]net.IP, 0, samples)
+				seenIP := map[string]bool{}
+
+				for len(ips) < samples {
+					ip := randomIP()
+					if seenIP[ip.String()] {
+						continue
+					}
+
+					seenIP[ip.String()] = true
+					ips = append(ips, ip)
+				}
+
+				seenMAC := map[string]bool{}
+
+				for _, ip := range ips {
+					mac := vxlan.HardwareAddrFromIP(ip)
+					Expect(mac).ToNot(BeNil())
+					Expect(mac).To(HaveLen(6))
+
+					// Stable for a given input.
+					Expect(vxlan.HardwareAddrFromIP(ip)).To(Equal(mac))
+
+					// Locally administered (U/L bit) and unicast (I/G bit clear).
+					Expect(mac[0] & 0x02).NotTo(BeZero())
+					Expect(mac[0] & 0x01).To(BeZero())
+
+					Expect(seenMAC).NotTo(HaveKey(mac.String()))
+					seenMAC[mac.String()] = true
+				}
+			})
+		},
+		Entry("IPv4", randomIPv4),
+		Entry("IPv6", randomIPv6),
+	)
 })
+
+func randomIPv4() net.IP {
+	b := make([]byte, 4)
+	_, err := rand.Read(b)
+	Expect(err).NotTo(HaveOccurred())
+
+	return net.IP(b)
+}
+
+func randomIPv6() net.IP {
+	b := make([]byte, 16)
+	_, err := rand.Read(b)
+	Expect(err).NotTo(HaveOccurred())
+
+	return net.IP(b)
+}
 
 var _ = Describe("GetVtepIPAddressFrom", func() {
 	It("should return the correct IP", func() {

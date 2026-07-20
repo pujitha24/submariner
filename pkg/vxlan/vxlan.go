@@ -73,12 +73,11 @@ func HardwareAddrFromIP(ip net.IP) net.HardwareAddr {
 		return net.HardwareAddr{0x02, 0x00, ip4[0], ip4[1], ip4[2], ip4[3]}
 	}
 
-	ip6 := ip.To16()
-	if ip6 == nil {
-		return nil
+	if ip6 := ip.To16(); ip6 != nil {
+		return net.HardwareAddr{0x02, ip6[11], ip6[12], ip6[13], ip6[14], ip6[15]}
 	}
 
-	return net.HardwareAddr{0x02, ip6[11], ip6[12], ip6[13], ip6[14], ip6[15]}
+	return nil
 }
 
 func createLinkDevice(attrs *Attributes, netLink netlinkAPI.Interface) (*netlink.Vxlan, error) {
