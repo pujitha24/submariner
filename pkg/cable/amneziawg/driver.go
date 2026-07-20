@@ -40,7 +40,6 @@ import (
 	"github.com/submariner-io/submariner/pkg/types"
 	"github.com/vishvananda/netlink"
 	k8snet "k8s.io/utils/net"
-	"k8s.io/utils/ptr"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
@@ -149,7 +148,7 @@ func NewDriver(localEndpoint *endpoint.Local, _ *types.SubmarinerCluster, _ cert
 
 	cfg := wgtypes.Config{
 		PrivateKey:   &priv,
-		ListenPort:   ptr.To(int(port)),
+		ListenPort:   new(int(port)),
 		FirewallMark: nil,
 		ReplacePeers: true,
 		Peers:        []wgtypes.PeerConfig{},
@@ -272,7 +271,7 @@ func (w *amneziawgDriver) ConnectToEndpoint(endpointInfo *natdiscovery.NATEndpoi
 			IP:   remoteIP,
 			Port: remotePort,
 		},
-		PersistentKeepaliveInterval: ptr.To(KeepAliveInterval),
+		PersistentKeepaliveInterval: new(KeepAliveInterval),
 		ReplaceAllowedIPs:           true,
 		AllowedIPs:                  allowedIPs,
 	}}
