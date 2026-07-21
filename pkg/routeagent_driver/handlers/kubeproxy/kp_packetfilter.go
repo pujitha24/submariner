@@ -86,18 +86,18 @@ func NewSyncHandler(ipFamily k8snet.IPFamily, localClusterCidr, localServiceCidr
 	}
 
 	return &SyncHandler{
-		ipFamily:         ipFamily,
-		localClusterCidr: cidr.ExtractSubnets(ipFamily, localClusterCidr),
-		localServiceCidr: cidr.ExtractSubnets(ipFamily, localServiceCidr),
-		remoteSubnets:    set.New[string](),
-		remoteSubnetGw:   map[string]net.IP{},
+		ipFamily:           ipFamily,
+		localClusterCidr:   cidr.ExtractSubnets(ipFamily, localClusterCidr),
+		localServiceCidr:   cidr.ExtractSubnets(ipFamily, localServiceCidr),
+		remoteSubnets:      set.New[string](),
+		remoteSubnetGw:     map[string]net.IP{},
 		remoteVTEPs:        set.New[string](),
 		remoteNodePodCIDRs: map[string][]string{},
 		routeCacheGWNode:   set.New[string](),
-		netLink:          netlink.New(),
-		pFilter:          pFilter,
-		vtepPrefixCIDR:   vtepPrefixCIDR,
-		vxlanIface:       GetVxLANInterfaceName(ipFamily),
+		netLink:            netlink.New(),
+		pFilter:            pFilter,
+		vtepPrefixCIDR:     vtepPrefixCIDR,
+		vxlanIface:         GetVxLANInterfaceName(ipFamily),
 	}
 }
 

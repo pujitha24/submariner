@@ -7,7 +7,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    10|http://www.apache.org/licenses/LICENSE-2.0
+http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -108,6 +108,7 @@ func (kp *SyncHandler) populateRemoteNode(internalIP string, podCIDRs []string, 
 	if !kp.State().IsOnGateway() || kp.vxlanDevice == nil {
 		logger.V(log.DEBUG).Infof("populateRemoteNode %s cached only (gateway=%t device=%v)",
 			internalIP, kp.State().IsOnGateway(), kp.vxlanDevice != nil)
+
 		return nil
 	}
 
